@@ -1,5 +1,4 @@
 const { randomInt } = require('crypto');
-const { GoogleGenAI } = require('@google/genai');
 
 const formatSentence = (text = '') => text.trim().replace(/\s+/g, ' ');
 
@@ -99,45 +98,18 @@ const generateWithOpenAI = async (apiKey, model, prompt, lineLimit) => {
   return parseReviewText(data?.choices?.[0]?.message?.content || '', lineLimit);
 };
 
-const generateWithGemini = async (apiKey, model, prompt, lineLimit) => {
-  try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { timeout: 25000, fetch: globalThis.fetch },
-    });
-
-    const interaction = await ai.interactions.create({
-      model,
-      input: prompt,
-    });
-
-    return parseReviewText(interaction.output_text || '', lineLimit);
-  } catch (error) {
-    if (error.publicMessage) throw error;
-
-    const status = Number(error.status || error.statusCode);
-    if (status) handleProviderError(status, 'Gemini', model);
-
-    throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
-  }
-};
-
 const generateReviewSuggestions = async (payload) => {
-  const apiKey = process.env.AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw createAIError(503, 'AI review generation is not configured on the server. Add AI_API_KEY in Render.', 'AI_KEY_MISSING');
+    throw createAIError(503, 'AI review generation is not configured on the server. Add OPENAI_API_KEY in Render.', 'AI_KEY_MISSING');
   }
 
-  const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
-  const defaultModel = provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini';
-  const model = process.env.AI_MODEL || defaultModel;
+  const model = process.env.AI_MODEL || 'gpt-4o-mini';
   const lineLimit = randomInt(5, 21);
   const prompt = buildPrompt(payload, lineLimit);
 
-  if (provider === 'gemini') return generateWithGemini(apiKey, model, prompt, lineLimit);
-  if (provider === 'openai') return generateWithOpenAI(apiKey, model, prompt, lineLimit);
-  throw createAIError(500, 'AI_PROVIDER must be either "gemini" or "openai".', 'AI_PROVIDER_UNSUPPORTED');
+  return generateWithOpenAI(apiKey, model, prompt, lineLimit);
 };
 
 module.exports = { generateReviewSuggestions };
