@@ -47,9 +47,18 @@ const parseReviewText = (text, lineLimit) => {
   return [reviewLines.join('\n')];
 };
 
-const handleProviderError = (status, provider) => {
-  if (status === 401 || status === 403) {
-    throw createAIError(503, `AI provider authentication failed. Check the ${provider} API key in Render.`, 'AI_KEY_REJECTED');
+const handleProviderError = (status, provider, model) => {
+  if (status === 401) {
+    throw createAIError(503, `${provider} rejected the API key. Replace it with a valid ${provider} key in Render.`, 'AI_KEY_REJECTED');
+  }
+  if (status === 403) {
+    throw createAIError(503, `${provider} denied access. Check the key's API restrictions and enable the ${provider} API for its project.`, 'AI_ACCESS_DENIED');
+  }
+  if (status === 400) {
+    throw createAIError(502, `${provider} returned HTTP 400. Verify the API key is for ${provider}, the model "${model}" is supported, and the request is valid.`, 'AI_BAD_REQUEST');
+  }
+  if (status === 404) {
+    throw createAIError(502, `${provider} could not find model "${model}". Set AI_MODEL to a model available to this API key.`, 'AI_MODEL_NOT_FOUND');
   }
   if (status === 429) {
     throw createAIError(503, `AI provider quota or rate limit reached. Check the ${provider} account limits.`, 'AI_RATE_LIMITED');
@@ -83,7 +92,7 @@ const generateWithOpenAI = async (apiKey, model, prompt, lineLimit) => {
     throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
   }
 
-  if (!response.ok) handleProviderError(response.status, 'OpenAI');
+  if (!response.ok) handleProviderError(response.status, 'OpenAI', model);
 
   const data = await response.json();
   return parseReviewText(data?.choices?.[0]?.message?.content || '', lineLimit);
@@ -111,7 +120,7 @@ const generateWithGemini = async (apiKey, model, prompt, lineLimit) => {
     throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
   }
 
-  if (!response.ok) handleProviderError(response.status, 'Gemini');
+  if (!response.ok) handleProviderError(response.status, 'Gemini', model);
 
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || '';
