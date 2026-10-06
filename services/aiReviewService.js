@@ -47,7 +47,7 @@ const parseReviewText = (text, lineLimit) => {
   return [reviewLines.join('\n')];
 };
 
-const handleProviderError = (status, provider, model) => {
+const handleProviderError = (status, provider, model, providerError = {}) => {
   if (status === 401) {
     throw createAIError(503, `${provider} rejected the API key. Replace it with a valid ${provider} key in Render.`, 'AI_KEY_REJECTED');
   }
@@ -61,6 +61,13 @@ const handleProviderError = (status, provider, model) => {
     throw createAIError(502, `${provider} could not find model "${model}". Set AI_MODEL to a model available to this API key.`, 'AI_MODEL_NOT_FOUND');
   }
   if (status === 429) {
+    const errorCode = String(providerError.code || providerError.type || '').toLowerCase();
+    if (['insufficient_quota', 'billing_hard_limit_reached'].includes(errorCode)) {
+      throw createAIError(503, 'OpenAI reports that this API key has no available quota. Check billing, credits, and project spending limits in the OpenAI account.', 'AI_QUOTA_EXHAUSTED');
+    }
+    if (errorCode === 'rate_limit_exceeded') {
+      throw createAIError(503, 'OpenAI rate limit reached. Wait briefly and try again, or reduce concurrent review requests.', 'AI_RATE_LIMITED');
+    }
     throw createAIError(503, `AI provider quota or rate limit reached. Check the ${provider} account limits.`, 'AI_RATE_LIMITED');
   }
   throw createAIError(502, `AI provider rejected the request. Check the configured model and ${provider} API access.`, 'AI_REQUEST_REJECTED');
@@ -92,7 +99,16 @@ const generateWithOpenAI = async (apiKey, model, prompt, lineLimit) => {
     throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
   }
 
-  if (!response.ok) handleProviderError(response.status, 'OpenAI', model);
+  if (!response.ok) {
+    let providerError = {};
+    try {
+      const body = await response.json();
+      providerError = body?.error || {};
+    } catch (error) {
+      providerError = {};
+    }
+    handleProviderError(response.status, 'OpenAI', model, providerError);
+  }
 
   const data = await response.json();
   return parseReviewText(data?.choices?.[0]?.message?.content || '', lineLimit);
