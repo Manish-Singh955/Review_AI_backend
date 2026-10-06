@@ -146,14 +146,22 @@ const generateReview = async (req, res) => {
       return res.status(400).json({ message: 'Add a few words or select an experience aspect before generating a review' });
     }
 
-    const suggestions = await generateReviewSuggestions({
-      businessName: location.business?.businessName || 'Business',
-      locationName: location.name,
-      rating: Number(rating),
-      experiences: normalizedExperiences,
-      customerComment,
-      language: language || 'English',
-    });
+    let suggestions;
+    try {
+      suggestions = await generateReviewSuggestions({
+        businessName: location.business?.businessName || 'Business',
+        locationName: location.name,
+        rating: Number(rating),
+        experiences: normalizedExperiences,
+        customerComment,
+        language: language || 'English',
+      });
+    } catch (error) {
+      console.error('AI review generation error:', error.code || error.name || 'UNKNOWN');
+      return res.status(error.statusCode || 502).json({
+        message: error.publicMessage || 'AI review generation is temporarily unavailable. Please try again.',
+      });
+    }
 
     const savedGeneration = await AIReviewGeneration.create({
       location: location._id,

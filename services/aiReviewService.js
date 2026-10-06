@@ -2,6 +2,14 @@ const { randomInt } = require('crypto');
 
 const formatSentence = (text = '') => text.trim().replace(/\s+/g, ' ');
 
+const createAIError = (statusCode, publicMessage, code) => {
+  const error = new Error(publicMessage);
+  error.statusCode = statusCode;
+  error.publicMessage = publicMessage;
+  error.code = code;
+  return error;
+};
+
 const normalizeExperiences = (experiences = []) => {
   const list = Array.isArray(experiences) ? experiences : [];
   return list.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
@@ -11,7 +19,7 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
   const apiKey = process.env.AI_API_KEY;
 
   if (!apiKey) {
-    throw new Error('AI review generation is not configured');
+    throw createAIError(503, 'AI review generation is not configured on the server. Add AI_API_KEY in Render.', 'AI_KEY_MISSING');
   }
 
   const lineLimit = randomInt(5, 21);
@@ -33,30 +41,42 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
     Return only the review text, with no numbering, heading, quotation marks, or markdown.
   `;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You generate customer review suggestions based only on provided facts. Never invent details.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.75,
-    }),
-  });
+  let response;
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You generate customer review suggestions based only on provided facts. Never invent details.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.75,
+      }),
+      signal: AbortSignal.timeout(25000),
+    });
+  } catch (error) {
+    throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
+  }
 
   if (!response.ok) {
-    throw new Error('AI provider request failed');
+    if (response.status === 401) {
+      throw createAIError(503, 'AI provider authentication failed. Check the AI_API_KEY configured in Render.', 'AI_KEY_REJECTED');
+    }
+    if (response.status === 429) {
+      throw createAIError(503, 'AI provider quota or rate limit reached. Check the OpenAI account billing and limits.', 'AI_RATE_LIMITED');
+    }
+    throw createAIError(502, 'AI provider rejected the request. Check the configured model and OpenAI project access.', 'AI_REQUEST_REJECTED');
   }
 
   const data = await response.json();
@@ -70,7 +90,7 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
     .slice(0, lineLimit);
 
   if (!reviewLines.length) {
-    throw new Error('AI provider returned an empty review');
+    throw createAIError(502, 'AI provider returned an empty review. Please try again.', 'AI_EMPTY_RESPONSE');
   }
 
   return [reviewLines.join('\n')];
