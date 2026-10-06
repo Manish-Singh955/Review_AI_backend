@@ -61,14 +61,17 @@ const handleProviderError = (status, provider, model, providerError = {}) => {
     throw createAIError(502, `${provider} could not find model "${model}". Set AI_MODEL to a model available to this API key.`, 'AI_MODEL_NOT_FOUND');
   }
   if (status === 429) {
-    const errorCode = String(providerError.code || providerError.type || '').toLowerCase();
-    if (['insufficient_quota', 'billing_hard_limit_reached'].includes(errorCode)) {
+    const providerDetails = [providerError.code, providerError.type, providerError.message]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (/insufficient_quota|billing|quota|credit|hard_limit/.test(providerDetails)) {
       throw createAIError(503, 'OpenAI reports that this API key has no available quota. Check billing, credits, and project spending limits in the OpenAI account.', 'AI_QUOTA_EXHAUSTED');
     }
-    if (errorCode === 'rate_limit_exceeded') {
+    if (/rate[_ ]limit|too many requests|requests per|tokens per|retry after/.test(providerDetails)) {
       throw createAIError(503, 'OpenAI rate limit reached. Wait briefly and try again, or reduce concurrent review requests.', 'AI_RATE_LIMITED');
     }
-    throw createAIError(503, `AI provider quota or rate limit reached. Check the ${provider} account limits.`, 'AI_RATE_LIMITED');
+    throw createAIError(503, 'OpenAI returned HTTP 429 without identifying the limit. Check billing, usage, and project limits first; if those are active, wait briefly and retry.', 'AI_429_UNCLASSIFIED');
   }
   throw createAIError(502, `AI provider rejected the request. Check the configured model and ${provider} API access.`, 'AI_REQUEST_REJECTED');
 };
