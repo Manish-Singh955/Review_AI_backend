@@ -138,16 +138,19 @@ const generateReview = async (req, res) => {
     }
 
     const customerComment = (comment || '').trim();
+    const normalizedExperiences = Array.isArray(experiences)
+      ? experiences.map((item) => String(item).trim()).filter(Boolean)
+      : [];
 
-    if (!customerComment) {
-      return res.status(400).json({ message: 'Please share your experience in the comment section' });
+    if (!customerComment && normalizedExperiences.length === 0) {
+      return res.status(400).json({ message: 'Add a few words or select an experience aspect before generating a review' });
     }
 
     const suggestions = await generateReviewSuggestions({
       businessName: location.business?.businessName || 'Business',
       locationName: location.name,
       rating: Number(rating),
-      experiences: Array.isArray(experiences) ? experiences : [],
+      experiences: normalizedExperiences,
       customerComment,
       language: language || 'English',
     });
@@ -155,7 +158,7 @@ const generateReview = async (req, res) => {
     const savedGeneration = await AIReviewGeneration.create({
       location: location._id,
       rating: Number(rating),
-      experiences: Array.isArray(experiences) ? experiences : [],
+      experiences: normalizedExperiences,
       customerComment,
       language: language || 'English',
       suggestions,

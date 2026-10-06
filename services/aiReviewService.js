@@ -9,15 +9,16 @@ const buildLocalSuggestions = ({ businessName, rating, experiences, customerComm
   const normalizedExperiences = normalizeExperiences(experiences);
   const commentText = formatSentence(customerComment || '');
   const aspectLine = normalizedExperiences.length
-    ? `The aspects I selected were ${normalizedExperiences.join(', ')}.`
-    : 'No additional aspects were selected.';
+    ? `I especially appreciated ${normalizedExperiences.join(', ')}.`
+    : 'I did not add another specific aspect.';
+  const commentLine = commentText || 'I chose not to add a written description.';
 
   return [[
-    `My review of ${businessName}.`,
-    `My rating is ${rating} out of 5.`,
-    `In my own words: ${commentText}`,
+    `I rated my experience at ${businessName} ${rating} out of 5.`,
+    commentLine,
     aspectLine,
-    'These are the details I chose to share.',
+    'These are the details I wanted to share.',
+    'This review reflects my own experience.',
   ].join('\n')];
 };
 
@@ -31,13 +32,14 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
   const prompt = `
     Write one natural, professional customer review in ${language || 'English'} using exactly 5 short lines.
     Use only the customer's rating, selected aspects, and comment as experience facts. The business name is provided context.
+    The selected aspects were chosen under a question asking what the customer liked, so they may be described as appreciated.
     Do not invent details, events, staff, products, service quality, recommendations, or future intentions.
-    Keep the customer's meaning. If their comment is brief, do not pad it with unsupported claims.
+    Keep the customer's meaning. If their comment is brief or empty, do not pad it with unsupported claims.
     Business: ${businessName}
     Location: ${locationName}
     Rating: ${rating}
     Selected aspects: ${normalizeExperiences(experiences).join(', ') || 'none'}
-    Customer's own words: ${customerComment}
+    Customer's own words: ${customerComment || '(none provided)'}
 
     Return exactly 5 plain text lines, with no numbering or heading.
   `;
