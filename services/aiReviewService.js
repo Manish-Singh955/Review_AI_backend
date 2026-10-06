@@ -5,19 +5,20 @@ const normalizeExperiences = (experiences = []) => {
   return list.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
 };
 
-const buildLocalSuggestions = ({ businessName, locationName, rating, experiences, customerComment, language }) => {
+const buildLocalSuggestions = ({ businessName, rating, experiences, customerComment }) => {
   const normalizedExperiences = normalizeExperiences(experiences);
   const commentText = formatSentence(customerComment || '');
-  const experienceText = normalizedExperiences.join(', ');
-  const details = [commentText, experienceText ? `Selected aspects: ${experienceText}.` : ''].filter(Boolean).join(' ');
+  const aspectLine = normalizedExperiences.length
+    ? `The aspects I selected were ${normalizedExperiences.join(', ')}.`
+    : 'No additional aspects were selected.';
 
-  return [
-    `At ${businessName}, I rated my experience ${rating} out of 5. ${details}`,
-    `My experience at ${businessName}: ${details} Rating: ${rating} out of 5.`,
-    `I visited ${businessName}. ${details} My rating was ${rating} out of 5.`,
-  ]
-    .map((item) => formatSentence(item))
-    .filter(Boolean);
+  return [[
+    `My review of ${businessName}.`,
+    `My rating is ${rating} out of 5.`,
+    `In my own words: ${commentText}`,
+    aspectLine,
+    'These are the details I chose to share.',
+  ].join('\n')];
 };
 
 const generateWithOpenAI = async ({ businessName, locationName, rating, experiences, customerComment, language }) => {
@@ -28,16 +29,17 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
   }
 
   const prompt = `
-    Create exactly 3 short customer review suggestions in ${language || 'English'}.
-    Use only the customer information provided.
-    Do not invent facts, products, staff names, or events.
+    Write one natural, professional customer review in ${language || 'English'} using exactly 5 short lines.
+    Use only the customer's rating, selected aspects, and comment as experience facts. The business name is provided context.
+    Do not invent details, events, staff, products, service quality, recommendations, or future intentions.
+    Keep the customer's meaning. If their comment is brief, do not pad it with unsupported claims.
     Business: ${businessName}
     Location: ${locationName}
     Rating: ${rating}
-    Experiences: ${normalizeExperiences(experiences).join(', ') || 'general experience'}
-    Customer comment: ${customerComment || 'No extra comment provided'}
+    Selected aspects: ${normalizeExperiences(experiences).join(', ') || 'none'}
+    Customer's own words: ${customerComment}
 
-    Return as plain text lines, each on a separate line, with no numbering.
+    Return exactly 5 plain text lines, with no numbering or heading.
   `;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -58,7 +60,7 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
           content: prompt,
         },
       ],
-      temperature: 0.7,
+      temperature: 0.4,
     }),
   });
 
@@ -69,14 +71,14 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
   const data = await response.json();
   const text = data?.choices?.[0]?.message?.content || '';
 
-  const suggestions = text
+  const reviewLines = text
     .split('\n')
     .map((line) => formatSentence(line.replace(/^-\s*/, '').replace(/^\d+\.\s*/, '')))
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, 6);
 
-  if (suggestions.length) {
-    return suggestions;
+  if (reviewLines.length >= 5) {
+    return [reviewLines.join('\n')];
   }
 
   return buildLocalSuggestions({ businessName, locationName, rating, experiences, customerComment, language });
