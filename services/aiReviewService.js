@@ -1,3 +1,5 @@
+const { randomInt } = require('crypto');
+
 const formatSentence = (text = '') => text.trim().replace(/\s+/g, ' ');
 
 const normalizeExperiences = (experiences = []) => {
@@ -5,43 +7,30 @@ const normalizeExperiences = (experiences = []) => {
   return list.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
 };
 
-const buildLocalSuggestions = ({ businessName, rating, experiences, customerComment }) => {
-  const normalizedExperiences = normalizeExperiences(experiences);
-  const commentText = formatSentence(customerComment || '');
-  const aspectLine = normalizedExperiences.length
-    ? `I especially appreciated ${normalizedExperiences.join(', ')}.`
-    : 'I did not add another specific aspect.';
-  const commentLine = commentText || 'I chose not to add a written description.';
-
-  return [[
-    `I rated my experience at ${businessName} ${rating} out of 5.`,
-    commentLine,
-    aspectLine,
-    'These are the details I wanted to share.',
-    'This review reflects my own experience.',
-  ].join('\n')];
-};
-
 const generateWithOpenAI = async ({ businessName, locationName, rating, experiences, customerComment, language }) => {
   const apiKey = process.env.AI_API_KEY;
 
-  if (!apiKey || process.env.AI_PROVIDER !== 'openai') {
-    return buildLocalSuggestions({ businessName, locationName, rating, experiences, customerComment, language });
+  if (!apiKey) {
+    throw new Error('AI review generation is not configured');
   }
 
+  const lineLimit = randomInt(5, 21);
+
   const prompt = `
-    Write one natural, professional customer review in ${language || 'English'} using exactly 5 short lines.
+    Write one natural, professional, first-person Google review draft in ${language || 'English'}.
+    The maximum is ${lineLimit} short lines. Choose a natural length based on how much detail the customer provided; never add filler to reach the limit.
     Use only the customer's rating, selected aspects, and comment as experience facts. The business name is provided context.
     The selected aspects were chosen under a question asking what the customer liked, so they may be described as appreciated.
     Do not invent details, events, staff, products, service quality, recommendations, or future intentions.
     Keep the customer's meaning. If their comment is brief or empty, do not pad it with unsupported claims.
+    Keep the tone professional and genuine, not promotional or exaggerated.
     Business: ${businessName}
     Location: ${locationName}
     Rating: ${rating}
     Selected aspects: ${normalizeExperiences(experiences).join(', ') || 'none'}
     Customer's own words: ${customerComment || '(none provided)'}
 
-    Return exactly 5 plain text lines, with no numbering or heading.
+    Return only the review text, with no numbering, heading, quotation marks, or markdown.
   `;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -62,7 +51,7 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
           content: prompt,
         },
       ],
-      temperature: 0.4,
+      temperature: 0.75,
     }),
   });
 
@@ -75,26 +64,18 @@ const generateWithOpenAI = async ({ businessName, locationName, rating, experien
 
   const reviewLines = text
     .split('\n')
-    .map((line) => formatSentence(line.replace(/^-\s*/, '').replace(/^\d+\.\s*/, '')))
+    .map((line) => formatSentence(line.replace(/^(?:[-*]\s*|\d+[.)]\s*)/, '')))
     .filter(Boolean)
-    .slice(0, 6);
+    .filter((line) => !/^(?:google review|review):?$/i.test(line))
+    .slice(0, lineLimit);
 
-  if (reviewLines.length >= 5) {
-    return [reviewLines.join('\n')];
+  if (!reviewLines.length) {
+    throw new Error('AI provider returned an empty review');
   }
 
-  return buildLocalSuggestions({ businessName, locationName, rating, experiences, customerComment, language });
+  return [reviewLines.join('\n')];
 };
 
-const generateReviewSuggestions = async (payload) => {
-  try {
-    return await generateWithOpenAI(payload);
-  } catch (error) {
-    return buildLocalSuggestions(payload);
-  }
-};
+const generateReviewSuggestions = async (payload) => generateWithOpenAI(payload);
 
-module.exports = {
-  generateReviewSuggestions,
-  buildLocalSuggestions,
-};
+module.exports = { generateReviewSuggestions };
