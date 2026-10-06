@@ -1,4 +1,5 @@
 const { randomInt } = require('crypto');
+const { GoogleGenAI } = require('@google/genai');
 
 const formatSentence = (text = '') => text.trim().replace(/\s+/g, ' ');
 
@@ -99,32 +100,26 @@ const generateWithOpenAI = async (apiKey, model, prompt, lineLimit) => {
 };
 
 const generateWithGemini = async (apiKey, model, prompt, lineLimit) => {
-  let response;
   try {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: 'Write grounded customer review drafts using only customer-provided facts. Never invent details.' }],
-        },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.75, maxOutputTokens: 2048 },
-      }),
-      signal: AbortSignal.timeout(25000),
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { timeout: 25000, fetch: globalThis.fetch },
     });
+
+    const interaction = await ai.interactions.create({
+      model,
+      input: prompt,
+    });
+
+    return parseReviewText(interaction.output_text || '', lineLimit);
   } catch (error) {
+    if (error.publicMessage) throw error;
+
+    const status = Number(error.status || error.statusCode);
+    if (status) handleProviderError(status, 'Gemini', model);
+
     throw createAIError(503, 'Could not reach the AI provider. Please try again.', 'AI_PROVIDER_UNREACHABLE');
   }
-
-  if (!response.ok) handleProviderError(response.status, 'Gemini', model);
-
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || '';
-  return parseReviewText(text, lineLimit);
 };
 
 const generateReviewSuggestions = async (payload) => {
@@ -135,7 +130,7 @@ const generateReviewSuggestions = async (payload) => {
   }
 
   const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
-  const defaultModel = provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini';
+  const defaultModel = provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini';
   const model = process.env.AI_MODEL || defaultModel;
   const lineLimit = randomInt(5, 21);
   const prompt = buildPrompt(payload, lineLimit);

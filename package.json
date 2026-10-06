@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "ReviewAI backend API for authentication and dashboard foundation",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
@@ -16,6 +19,7 @@
   "author": "ReviewAI",
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
