@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { toQueryString } = require('../utils/sanitize');
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -17,7 +18,9 @@ const generateToken = (user) => {
 
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const name = toQueryString(req.body.name).trim();
+    const email = toQueryString(req.body.email).trim();
+    const password = toQueryString(req.body.password);
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Please provide name, email, and password' });
@@ -65,7 +68,8 @@ const registerUser = async (req, res) => {
 
 const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = toQueryString(req.body.email).trim();
+    const password = toQueryString(req.body.password);
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide email and password' });

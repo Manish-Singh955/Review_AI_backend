@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Business = require('../models/Business');
 const Feedback = require('../models/Feedback');
 const Location = require('../models/Location');
+const { toQueryString } = require('../utils/sanitize');
 
 const getPriorityByRating = (rating) => {
   if (rating <= 2) return 'high';
@@ -21,9 +22,12 @@ const getBusinessForOwner = async (req) => {
 
 const createFeedback = async (req, res) => {
   try {
-    const { qrCode, rating, category, message } = req.body;
+    const { rating } = req.body;
+    const qrCode = toQueryString(req.body.qrCode);
+    const category = toQueryString(req.body.category);
+    const message = toQueryString(req.body.message);
 
-    if (!qrCode || !rating || !String(message || '').trim()) {
+    if (!qrCode || !rating || !message.trim()) {
       return res.status(400).json({
         message: 'QR code, rating, and message are required',
       });
@@ -37,7 +41,7 @@ const createFeedback = async (req, res) => {
       return res.status(400).json({ message: 'Invalid feedback category' });
     }
 
-    const location = await Location.findOne({ qrCode }).populate('business');
+    const location = await Location.findOne({ qrCode, deletedAt: null }).populate('business');
 
     if (!location) {
       return res.status(404).json({ message: 'Location not found for this QR code' });
@@ -105,7 +109,7 @@ const updateFeedbackPriority = async (req, res) => {
     if (!business) return res.status(404).json({ message: 'Business profile not found' });
     const { priority } = req.body;
 
-    const feedback = await Feedback.findOne({ _id: req.params.id, business: business._id });
+    const feedback = await Feedback.findOne({ _id: toQueryString(req.params.id), business: business._id });
 
     if (!feedback) {
       return res.status(404).json({ message: 'Feedback not found' });
@@ -136,7 +140,7 @@ const updateFeedbackCategory = async (req, res) => {
     if (!business) return res.status(404).json({ message: 'Business profile not found' });
     const { category } = req.body;
 
-    const feedback = await Feedback.findOne({ _id: req.params.id, business: business._id });
+    const feedback = await Feedback.findOne({ _id: toQueryString(req.params.id), business: business._id });
 
     if (!feedback) {
       return res.status(404).json({ message: 'Feedback not found' });
@@ -167,7 +171,7 @@ const updateFeedbackStatus = async (req, res) => {
     if (!business) return res.status(404).json({ message: 'Business profile not found' });
     const { status } = req.body;
 
-    const feedback = await Feedback.findOne({ _id: req.params.id, business: business._id });
+    const feedback = await Feedback.findOne({ _id: toQueryString(req.params.id), business: business._id });
 
     if (!feedback) {
       return res.status(404).json({ message: 'Feedback not found' });

@@ -85,8 +85,32 @@ const getOpenAIClient = () => {
 
   return new OpenAI({
     apiKey,
+    timeout: Number(process.env.AI_TIMEOUT_MS) || 20000,
+    maxRetries: 1,
     ...(process.env.OPENAI_BASE_URL ? { baseURL: process.env.OPENAI_BASE_URL } : {}),
   });
+};
+
+const joinList = (items) => {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+};
+
+// Offline drafts built only from what the customer provided, used when the AI provider cannot be reached.
+const buildTemplateDrafts = ({ businessName, locationName, rating, experiences, customerComment }) => {
+  const place = [businessName, locationName].filter(Boolean).join(' - ') || 'this business';
+  const aspects = joinList(normalizeExperiences(experiences));
+  const comment = formatSentence(customerComment || '');
+  const commentLine = comment ? (/[.!?]$/.test(comment) ? comment : `${comment}.`) : '';
+  const verdict = Number(rating) >= 5 ? 'a great experience' : 'a good experience';
+
+  const drafts = [
+    [`I had ${verdict} at ${place}.`, aspects && `I appreciated the ${aspects}.`, commentLine],
+    [aspects && `The ${aspects} stood out during my visit to ${place}.`, !aspects && `My visit to ${place} was ${verdict}.`, commentLine, `${rating} out of 5 stars.`],
+    [commentLine, `Overall, ${verdict} at ${place}${aspects ? `, especially the ${aspects}` : ''}.`],
+  ];
+
+  return drafts.map((lines) => lines.filter(Boolean).join('\n'));
 };
 
 const generateWithOpenAI = async (model, prompt, lineLimit) => {
@@ -127,7 +151,17 @@ const generateReviewSuggestions = async (payload) => {
   const lineLimit = randomInt(5, 21);
   const prompt = buildPrompt(payload, lineLimit);
 
-  return generateWithOpenAI(model, prompt, lineLimit);
+  try {
+    const suggestions = await generateWithOpenAI(model, prompt, lineLimit);
+    return { suggestions, source: 'ai' };
+  } catch (error) {
+    if (error.code !== 'AI_PROVIDER_UNREACHABLE') throw error;
+
+    // Rotate so regenerating offers a different template first.
+    const drafts = buildTemplateDrafts(payload);
+    const start = randomInt(drafts.length);
+    return { suggestions: [...drafts.slice(start), ...drafts.slice(0, start)], source: 'template' };
+  }
 };
 
-module.exports = { generateReviewSuggestions };
+module.exports = { generateReviewSuggestions, buildTemplateDrafts };

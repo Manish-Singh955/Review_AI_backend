@@ -41,6 +41,11 @@ const locationSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Deleted locations are hidden but kept so their ratings, scans and feedback remain.
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
