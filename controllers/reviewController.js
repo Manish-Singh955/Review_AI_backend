@@ -5,12 +5,13 @@ const AIReviewGeneration = require('../models/AIReviewGeneration');
 const GoogleClick = require('../models/GoogleClick');
 const QRScan = require('../models/QRScan');
 const { generateReviewSuggestions } = require('../services/aiReviewService');
+const { toQueryString } = require('../utils/sanitize');
 
 const getPublicLocationByQr = async (req, res) => {
   try {
-    const { qrCode } = req.params;
+    const qrCode = toQueryString(req.params.qrCode);
 
-    const location = await Location.findOne({ qrCode }).populate('business');
+    const location = await Location.findOne({ qrCode, deletedAt: null }).populate('business');
 
     if (!location) {
       return res.status(404).json({ message: 'This QR code is invalid or does not exist.' });
@@ -61,7 +62,10 @@ const getPublicLocationByQr = async (req, res) => {
 
 const submitRating = async (req, res) => {
   try {
-    const { qrCode, rating, experiences, comment, language } = req.body;
+    const { rating, experiences } = req.body;
+    const qrCode = toQueryString(req.body.qrCode);
+    const comment = toQueryString(req.body.comment);
+    const language = toQueryString(req.body.language);
 
     if (!qrCode || !rating) {
       return res.status(400).json({ message: 'QR code and rating are required' });
@@ -74,7 +78,7 @@ const submitRating = async (req, res) => {
       return res.status(400).json({ message: 'Rating must be a whole number from 1 to 5' });
     }
 
-    const location = await Location.findOne({ qrCode });
+    const location = await Location.findOne({ qrCode, deletedAt: null });
 
     if (!location) {
       return res.status(404).json({ message: 'Location not found for this QR code' });
@@ -91,9 +95,9 @@ const submitRating = async (req, res) => {
     const savedRating = await Rating.create({
       location: location._id,
       qrCode,
-      rating,
+      rating: Number(rating),
       experiences: normalizedExperiences,
-      comment: comment || '',
+      comment,
       language: language || 'English',
     });
 
@@ -110,13 +114,15 @@ const submitRating = async (req, res) => {
 
 const generateReview = async (req, res) => {
   try {
-    const { qrCode, rating, experiences, comment, language } = req.body;
+    const { rating, experiences } = req.body;
+    const qrCode = toQueryString(req.body.qrCode);
+    const language = toQueryString(req.body.language);
 
     if (!qrCode || !rating) {
       return res.status(400).json({ message: 'QR code and rating are required' });
     }
 
-    const location = await Location.findOne({ qrCode }).populate('business');
+    const location = await Location.findOne({ qrCode, deletedAt: null }).populate('business');
 
     if (!location) {
       return res.status(404).json({ message: 'Location not found for this QR code' });
@@ -137,7 +143,7 @@ const generateReview = async (req, res) => {
       return res.status(400).json({ message: 'Lower ratings are collected as private feedback instead' });
     }
 
-    const customerComment = (comment || '').trim();
+    const customerComment = toQueryString(req.body.comment).trim();
     const normalizedExperiences = Array.isArray(experiences)
       ? experiences.map((item) => String(item).trim()).filter(Boolean)
       : [];
@@ -147,15 +153,16 @@ const generateReview = async (req, res) => {
     }
 
     let suggestions;
+    let source;
     try {
-      suggestions = await generateReviewSuggestions({
+      ({ suggestions, source } = await generateReviewSuggestions({
         businessName: location.business?.businessName || 'Business',
         locationName: location.name,
         rating: Number(rating),
         experiences: normalizedExperiences,
         customerComment,
         language: language || 'English',
-      });
+      }));
     } catch (error) {
       console.error('AI review generation error:', error.code || error.name || 'UNKNOWN');
       return res.status(error.statusCode || 502).json({
@@ -175,6 +182,7 @@ const generateReview = async (req, res) => {
     return res.status(200).json({
       message: 'Review suggestions generated successfully',
       suggestions,
+      source,
       generationId: savedGeneration._id,
     });
   } catch (error) {
@@ -186,13 +194,13 @@ const generateReview = async (req, res) => {
 
 const recordGoogleClick = async (req, res) => {
   try {
-    const { qrCode } = req.body;
+    const qrCode = toQueryString(req.body.qrCode);
 
     if (!qrCode) {
       return res.status(400).json({ message: 'QR code is required' });
     }
 
-    const location = await Location.findOne({ qrCode }).populate('business');
+    const location = await Location.findOne({ qrCode, deletedAt: null }).populate('business');
 
     if (!location) {
       return res.status(404).json({ message: 'Location not found for this QR code' });

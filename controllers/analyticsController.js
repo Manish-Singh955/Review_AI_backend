@@ -5,6 +5,7 @@ const Location = require('../models/Location');
 const QRScan = require('../models/QRScan');
 const Rating = require('../models/Rating');
 const AIReviewGeneration = require('../models/AIReviewGeneration');
+const { toQueryString } = require('../utils/sanitize');
 
 const getDateFilter = (range) => {
   const now = new Date();
@@ -25,14 +26,16 @@ const getDateFilter = (range) => {
 
 const getDashboardAnalytics = async (req, res, next) => {
   try {
-    const range = req.query.range || 'all';
+    const range = toQueryString(req.query.range) || 'all';
     if (!['today', '7days', '30days', 'all'].includes(range)) {
       return res.status(400).json({ success: false, message: 'Range must be today, 7days, 30days, or all' });
     }
 
     const business = await Business.findOne({ owner: req.user.id }).select('_id');
-    const locations = business ? await Location.find({ business: business._id }).select('_id isActive scanCount') : [];
-    const locationIds = locations.map((location) => location._id);
+    // Deleted locations still contribute their historical events, but are not counted as locations.
+    const allLocations = business ? await Location.find({ business: business._id }).select('_id isActive scanCount deletedAt') : [];
+    const locations = allLocations.filter((location) => !location.deletedAt);
+    const locationIds = allLocations.map((location) => location._id);
     const dateFilter = getDateFilter(range);
     const timestampMatch = dateFilter ? { createdAt: dateFilter } : {};
     const locationMatch = { location: { $in: locationIds }, ...timestampMatch };
@@ -68,7 +71,7 @@ const getDashboardAnalytics = async (req, res, next) => {
 
     let totalQrScans = 0;
     if (range === 'all') {
-      totalQrScans = locations.reduce((total, location) => total + (location.scanCount || 0), 0);
+      totalQrScans = allLocations.reduce((total, location) => total + (location.scanCount || 0), 0);
     } else if (locationIds.length) {
       totalQrScans = await QRScan.countDocuments({ location: { $in: locationIds }, createdAt: dateFilter });
     }

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Business = require('../models/Business');
 const Location = require('../models/Location');
+const { toQueryString } = require('../utils/sanitize');
 
 const isGoogleReviewUrl = (value) => {
   try {
@@ -82,7 +83,7 @@ const getLocations = async (req, res) => {
     }
 
     const searchTerm = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
-    const locationFilter = { business: business._id };
+    const locationFilter = { business: business._id, deletedAt: null };
 
     if (searchTerm) {
       const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -119,8 +120,9 @@ const getLocationById = async (req, res) => {
     }
 
     const location = await Location.findOne({
-      _id: req.params.id,
+      _id: toQueryString(req.params.id),
       business: business._id,
+      deletedAt: null,
     });
 
     if (!location) {
@@ -148,8 +150,9 @@ const updateLocation = async (req, res) => {
     }
 
     const location = await Location.findOne({
-      _id: req.params.id,
+      _id: toQueryString(req.params.id),
       business: business._id,
+      deletedAt: null,
     });
 
     if (!location) {
@@ -204,8 +207,9 @@ const deleteLocation = async (req, res) => {
     }
 
     const location = await Location.findOne({
-      _id: req.params.id,
+      _id: toQueryString(req.params.id),
       business: business._id,
+      deletedAt: null,
     });
 
     if (!location) {
@@ -213,15 +217,16 @@ const deleteLocation = async (req, res) => {
     }
 
     location.isActive = false;
+    location.deletedAt = new Date();
     await location.save();
 
     return res.status(200).json({
-      message: 'Location deactivated successfully',
+      message: 'Location deleted successfully',
       location,
     });
   } catch (error) {
     return res.status(500).json({
-      message: 'Location deactivation failed',
+      message: 'Location deletion failed',
     });
   }
 };

@@ -1,4 +1,7 @@
+const mongoose = require('mongoose');
 const Business = require('../models/Business');
+const Location = require('../models/Location');
+const { toQueryString } = require('../utils/sanitize');
 
 const createBusiness = async (req, res) => {
   try {
@@ -76,10 +79,23 @@ const getBusiness = async (req, res) => {
   }
 };
 
+// Resolves the owner's business, by :id when the route provides one.
+const findOwnedBusiness = (req) => {
+  const filter = { owner: req.user.id };
+  if (req.params.id !== undefined) {
+    filter._id = toQueryString(req.params.id);
+  }
+  return Business.findOne(filter);
+};
+
 const updateBusiness = async (req, res) => {
   try {
     if (req.user.role !== 'business' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Only business owners can update business profiles' });
+    }
+
+    if (req.params.id !== undefined && !mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ message: 'Business profile not found' });
     }
 
     const {
@@ -100,7 +116,7 @@ const updateBusiness = async (req, res) => {
       });
     }
 
-    const business = await Business.findOne({ owner: req.user.id });
+    const business = await findOwnedBusiness(req);
 
     if (!business) {
       return res.status(404).json({ message: 'Business profile not found' });
@@ -133,8 +149,41 @@ const updateBusiness = async (req, res) => {
   }
 };
 
+const deleteBusiness = async (req, res) => {
+  try {
+    if (req.user.role !== 'business' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only business owners can delete business profiles' });
+    }
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ message: 'Business profile not found' });
+    }
+
+    const business = await findOwnedBusiness(req);
+
+    if (!business) {
+      return res.status(404).json({ message: 'Business profile not found' });
+    }
+
+    // Locations are soft-deleted so their QR codes stop working while
+    // ratings, scans, clicks and feedback stay in the database.
+    await Location.updateMany(
+      { business: business._id, deletedAt: null },
+      { isActive: false, deletedAt: new Date() }
+    );
+    await Business.deleteOne({ _id: business._id });
+
+    return res.status(200).json({ message: 'Business profile deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Business deletion failed',
+    });
+  }
+};
+
 module.exports = {
   createBusiness,
   getBusiness,
   updateBusiness,
+  deleteBusiness,
 };

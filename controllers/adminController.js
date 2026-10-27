@@ -21,7 +21,7 @@ const getAdminBusinesses = async (req, res, next) => {
 
 const getAdminLocations = async (req, res, next) => {
   try {
-    const locations = await Location.find().populate('business', 'businessName').sort({ createdAt: -1 }).lean();
+    const locations = await Location.find({ deletedAt: null }).populate('business', 'businessName').sort({ createdAt: -1 }).lean();
     return res.json({ success: true, data: locations });
   } catch (error) { return next(error); }
 };
@@ -38,7 +38,7 @@ const getAdminStatistics = async (req, res, next) => {
     const [totalUsers, totalBusinesses, locations, totalReviews, totalFeedback, totalReviewsGenerated] = await Promise.all([
       User.countDocuments(),
       Business.countDocuments(),
-      Location.find().select('scanCount').lean(),
+      Location.find().select('scanCount deletedAt').lean(),
       Rating.countDocuments(),
       Feedback.countDocuments(),
       AIReviewGeneration.countDocuments(),
@@ -49,7 +49,7 @@ const getAdminStatistics = async (req, res, next) => {
       data: {
         totalUsers,
         totalBusinesses,
-        totalLocations: locations.length,
+        totalLocations: locations.filter((location) => !location.deletedAt).length,
         totalReviews,
         totalReviewsGenerated,
         totalFeedback,
